@@ -6,7 +6,7 @@ use ignore::{WalkBuilder, WalkState};
 use regex::Regex;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 macro_rules! make_traverse_tag_regex {
     ($tag:expr) => {
@@ -31,6 +31,7 @@ struct CliArgs {
 }
 
 struct Agregator<'a> {
+    tag_list: TagList,
     path: &'a std::path::Path,
 }
 
@@ -43,21 +44,49 @@ impl<'a> Sink for Agregator<'a> {
         mat: &grep::searcher::SinkMatch<'_>,
     ) -> Result<bool, Self::Error> {
         let line_number = mat.line_number().unwrap_or(0);
-        let path = self.path.display();
         let bytes = mat.bytes();
         let line = std::str::from_utf8(bytes).unwrap_or("");
 
         let regex = Regex::new(REGEX).expect("Failed to create regex.");
         if let Some(captures) = regex.captures(line) {
             if let Some(group) = captures.get(RegexGroup::TARGET as usize) {
-                println!("[TARGET] {}:{}: {}", path, line_number, group.as_str());
+                self.tag_list.targets.write().unwrap().push(TagLocation {
+                    path: Box::from(self.path),
+                    line_number: line_number,
+                    line_content: group.as_str().to_string(),
+                })
             }
             if let Some(group) = captures.get(RegexGroup::LINK as usize) {
-                println!("[LINK] {}:{}: {}", path, line_number, group.as_str());
+                self.tag_list.links.write().unwrap().push(TagLocation {
+                    path: Box::from(self.path),
+                    line_number: line_number,
+                    line_content: group.as_str().to_string(),
+                })
             }
         }
 
         Ok(true)
+    }
+}
+
+struct TagLocation {
+    path: Box<std::path::Path>,
+    line_number: u64,
+    line_content: String,
+}
+
+#[derive(Clone)]
+struct TagList {
+    targets: Arc<RwLock<Vec<TagLocation>>>,
+    links: Arc<RwLock<Vec<TagLocation>>>,
+}
+
+impl TagList {
+    fn new() -> TagList {
+        TagList {
+            targets: Arc::new(RwLock::new(vec![])),
+            links: Arc::new(RwLock::new(vec![])),
+        }
     }
 }
 
@@ -71,10 +100,12 @@ fn main() {
         walk_builder.add(path);
     }
 
+    let tag_list = TagList::new();
     let walker = walk_builder.build_parallel();
 
     // Iterate over all files in provided paths except ignored files
     walker.run(|| {
+        let tag_list_copy = tag_list.clone();
         let matcher_copy = Arc::clone(&matcher);
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(b'\x00'))
@@ -96,7 +127,10 @@ fn main() {
             let _search_result = searcher.search_path(
                 matcher_copy.as_ref(),
                 entry.path(),
-                Agregator { path: entry.path() },
+                Agregator {
+                    tag_list: tag_list_copy.clone(),
+                    path: entry.path(),
+                },
             );
 
             WalkState::Continue
@@ -104,4 +138,20 @@ fn main() {
     });
 
     println!("{:?}", cli_args);
+    for target in tag_list.targets.read().unwrap().iter() {
+        println!(
+            "[TARGET] {}:{}: {}",
+            target.path.display(),
+            target.line_number,
+            target.line_content
+        );
+    }
+    for link in tag_list.links.read().unwrap().iter() {
+        println!(
+            "[LINK] {}:{}: {}",
+            link.path.display(),
+            link.line_number,
+            link.line_content
+        );
+    }
 }
