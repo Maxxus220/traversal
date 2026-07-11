@@ -14,6 +14,10 @@ macro_rules! make_traverse_tag_regex {
     };
 }
 
+// To avoid repeated allocations, we just reserve a ton of space.
+const NUM_LISTS_TO_RESERVE: usize = 24;
+const NUM_TAGS_TO_RESERVE: usize = 10000;
+
 const TARGET_TAG_REGEX: &'static str = make_traverse_tag_regex!("tgt");
 const LINK_TAG_REGEX: &'static str = make_traverse_tag_regex!("lnk");
 const REGEX_STR: &'static str = formatcp!("{TARGET_TAG_REGEX}|{LINK_TAG_REGEX}");
@@ -85,6 +89,21 @@ struct CombinedTagList {
     tag_lists: Vec<TagList>,
 }
 
+struct ThreadBuffer {
+    tag_list: TagList,
+    combined: Arc<RwLock<CombinedTagList>>,
+}
+
+impl Drop for ThreadBuffer {
+    fn drop(&mut self) {
+        let tag_list = TagList {
+            targets: std::mem::take(&mut self.tag_list.targets),
+            links: std::mem::take(&mut self.tag_list.links),
+        };
+        self.combined.write().unwrap().tag_lists.push(tag_list);
+    }
+}
+
 fn main() {
     let cli_args = CliArgs::parse();
     let matcher = Arc::new(
@@ -97,16 +116,29 @@ fn main() {
     }
 
     let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
+    combined_tag_list
+        .write()
+        .unwrap()
+        .tag_lists
+        .reserve(NUM_LISTS_TO_RESERVE);
     let walker = walk_builder.build_parallel();
 
     // Iterate over all files in provided paths except ignored files
     walker.run(|| {
-        let combined_tag_list_copy = combined_tag_list.clone();
         let matcher_copy = Arc::clone(&matcher);
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(b'\x00'))
             .line_number(true)
             .build();
+        let mut buffer = ThreadBuffer {
+            tag_list: TagList {
+                targets: vec![],
+                links: vec![],
+            },
+            combined: combined_tag_list.clone(),
+        };
+        buffer.tag_list.targets.reserve(NUM_TAGS_TO_RESERVE);
+        buffer.tag_list.links.reserve(NUM_TAGS_TO_RESERVE);
         Box::new(move |result| {
             let entry = match result {
                 Ok(ent) => ent,
@@ -120,21 +152,12 @@ fn main() {
                 return WalkState::Continue;
             }
 
-            let mut tag_list = TagList {
-                targets: vec![],
-                links: vec![],
-            };
             let agregator = Agregator {
-                tag_list: &mut tag_list,
+                tag_list: &mut buffer.tag_list,
                 path: entry.path(),
             };
             let _search_result =
                 searcher.search_path(matcher_copy.as_ref(), entry.path(), agregator);
-            combined_tag_list_copy
-                .write()
-                .unwrap()
-                .tag_lists
-                .push(tag_list);
 
             WalkState::Continue
         })
