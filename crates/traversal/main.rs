@@ -45,6 +45,8 @@ impl<'a> Sink for Agregator<'a> {
         _searcher: &grep::searcher::Searcher,
         mat: &grep::searcher::SinkMatch<'_>,
     ) -> Result<bool, Self::Error> {
+        // TODO(mfeist): Do a manual byte search with help from memchr::memmem instead for a speed
+        // up.
         let line_number = mat.line_number().unwrap_or(0);
         let bytes = mat.bytes();
         let line = std::str::from_utf8(bytes).unwrap_or("");
