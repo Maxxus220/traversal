@@ -76,6 +76,8 @@ struct TagLocation {
     line_content: String,
 }
 
+// TODO(mfeist): We should be hashing on tag names instead of doing big vectors. Main use case will
+// be searching for a tag name, so we should optimize that.
 struct TagList {
     targets: Vec<TagLocation>,
     links: Vec<TagLocation>,
