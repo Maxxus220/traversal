@@ -33,7 +33,7 @@ struct CliArgs {
 }
 
 struct Agregator<'a> {
-    tag_list: TagList,
+    tag_list: &'a mut TagList,
     path: &'a std::path::Path,
 }
 
@@ -51,14 +51,14 @@ impl<'a> Sink for Agregator<'a> {
 
         if let Some(captures) = REGEX.captures(line) {
             if let Some(group) = captures.get(RegexGroup::TARGET as usize) {
-                self.tag_list.targets.write().unwrap().push(TagLocation {
+                self.tag_list.targets.push(TagLocation {
                     path: Box::from(self.path),
                     line_number: line_number,
                     line_content: group.as_str().to_string(),
                 })
             }
             if let Some(group) = captures.get(RegexGroup::LINK as usize) {
-                self.tag_list.links.write().unwrap().push(TagLocation {
+                self.tag_list.links.push(TagLocation {
                     path: Box::from(self.path),
                     line_number: line_number,
                     line_content: group.as_str().to_string(),
@@ -76,19 +76,13 @@ struct TagLocation {
     line_content: String,
 }
 
-#[derive(Clone)]
 struct TagList {
-    targets: Arc<RwLock<Vec<TagLocation>>>,
-    links: Arc<RwLock<Vec<TagLocation>>>,
+    targets: Vec<TagLocation>,
+    links: Vec<TagLocation>,
 }
 
-impl TagList {
-    fn new() -> TagList {
-        TagList {
-            targets: Arc::new(RwLock::new(vec![])),
-            links: Arc::new(RwLock::new(vec![])),
-        }
-    }
+struct CombinedTagList {
+    tag_lists: Vec<TagList>,
 }
 
 fn main() {
@@ -102,12 +96,12 @@ fn main() {
         walk_builder.add(path);
     }
 
-    let tag_list = TagList::new();
+    let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
     let walker = walk_builder.build_parallel();
 
     // Iterate over all files in provided paths except ignored files
     walker.run(|| {
-        let tag_list_copy = tag_list.clone();
+        let combined_tag_list_copy = combined_tag_list.clone();
         let matcher_copy = Arc::clone(&matcher);
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(b'\x00'))
@@ -126,14 +120,21 @@ fn main() {
                 return WalkState::Continue;
             }
 
-            let _search_result = searcher.search_path(
-                matcher_copy.as_ref(),
-                entry.path(),
-                Agregator {
-                    tag_list: tag_list_copy.clone(),
-                    path: entry.path(),
-                },
-            );
+            let mut tag_list = TagList {
+                targets: vec![],
+                links: vec![],
+            };
+            let agregator = Agregator {
+                tag_list: &mut tag_list,
+                path: entry.path(),
+            };
+            let _search_result =
+                searcher.search_path(matcher_copy.as_ref(), entry.path(), agregator);
+            combined_tag_list_copy
+                .write()
+                .unwrap()
+                .tag_lists
+                .push(tag_list);
 
             WalkState::Continue
         })
@@ -141,20 +142,24 @@ fn main() {
 
     // Display tags
     println!("{:?}", cli_args);
-    for target in tag_list.targets.read().unwrap().iter() {
-        println!(
-            "[TARGET] {}:{}: {}",
-            target.path.display(),
-            target.line_number,
-            target.line_content
-        );
+    for tag_list in &combined_tag_list.read().unwrap().tag_lists {
+        for target in &tag_list.targets {
+            println!(
+                "[TARGET] {}:{}: {}",
+                target.path.display(),
+                target.line_number,
+                target.line_content
+            );
+        }
     }
-    for link in tag_list.links.read().unwrap().iter() {
-        println!(
-            "[LINK] {}:{}: {}",
-            link.path.display(),
-            link.line_number,
-            link.line_content
-        );
+    for tag_list in &combined_tag_list.read().unwrap().tag_lists {
+        for link in &tag_list.links {
+            println!(
+                "[LINK] {}:{}: {}",
+                link.path.display(),
+                link.line_number,
+                link.line_content
+            );
+        }
     }
 }
