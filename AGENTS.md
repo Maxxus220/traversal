@@ -17,8 +17,7 @@ No tests yet. No CI. No formatter/lint config.
 |------|------|
 | `crates/traversal/main.rs` | Entire binary. CLI via `clap::Parser`, parallel walk via `ignore::WalkBuilder`, regex search via the `grep` crate. |
 | `test_workspace/` | Small hand-curated fixture with a few tags. |
-| `test_workspace_large/` | Auto-generated 1000-file fixture (2000 tags). |
-| `generate_large_workspace.py` | Regenerates `test_workspace_large/`. Run with `--num-files`, `--num-tags`, `--output-dir` args. |
+| `generate_large_workspace.py` | Creates large example workspaces. Run with `--num-files`, `--num-tags`, `--output-dir` args. |
 
 ## What it does
 
