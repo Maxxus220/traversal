@@ -14,10 +14,6 @@ macro_rules! make_traverse_tag_regex {
     };
 }
 
-// To avoid repeated allocations, we just reserve a ton of space.
-const NUM_LISTS_TO_RESERVE: usize = 24;
-const NUM_TAGS_TO_RESERVE: usize = 10000;
-
 const TARGET_TAG_REGEX: &'static str = make_traverse_tag_regex!("tgt");
 const LINK_TAG_REGEX: &'static str = make_traverse_tag_regex!("lnk");
 const REGEX_STR: &'static str = formatcp!("{TARGET_TAG_REGEX}|{LINK_TAG_REGEX}");
@@ -116,11 +112,6 @@ fn main() {
     }
 
     let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
-    combined_tag_list
-        .write()
-        .unwrap()
-        .tag_lists
-        .reserve(NUM_LISTS_TO_RESERVE);
     let walker = walk_builder.build_parallel();
 
     // Iterate over all files in provided paths except ignored files
@@ -137,8 +128,6 @@ fn main() {
             },
             combined: combined_tag_list.clone(),
         };
-        buffer.tag_list.targets.reserve(NUM_TAGS_TO_RESERVE);
-        buffer.tag_list.links.reserve(NUM_TAGS_TO_RESERVE);
         Box::new(move |result| {
             let entry = match result {
                 Ok(ent) => ent,
