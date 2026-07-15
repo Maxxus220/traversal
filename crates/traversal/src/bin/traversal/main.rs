@@ -55,19 +55,27 @@ impl<'a> Sink for Agregator<'a> {
         if let Some(captures) = REGEX.captures(line) {
             if let Some(group) = captures.get(RegexGroup::TARGET as usize) {
                 let tag_name = group.as_str().to_string();
-                self.tag_list.targets.entry(tag_name.clone()).or_default().push(TagLocation {
-                    path: Box::from(self.path),
-                    line_number: line_number,
-                    line_content: tag_name,
-                })
+                self.tag_list
+                    .targets
+                    .entry(tag_name.clone())
+                    .or_default()
+                    .push(TagLocation {
+                        path: Box::from(self.path),
+                        line_number: line_number,
+                        line_content: tag_name,
+                    })
             }
             if let Some(group) = captures.get(RegexGroup::LINK as usize) {
                 let tag_name = group.as_str().to_string();
-                self.tag_list.links.entry(tag_name.clone()).or_default().push(TagLocation {
-                    path: Box::from(self.path),
-                    line_number: line_number,
-                    line_content: tag_name,
-                })
+                self.tag_list
+                    .links
+                    .entry(tag_name.clone())
+                    .or_default()
+                    .push(TagLocation {
+                        path: Box::from(self.path),
+                        line_number: line_number,
+                        line_content: tag_name,
+                    })
             }
         }
 
