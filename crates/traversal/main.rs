@@ -4,6 +4,7 @@ use grep::regex::RegexMatcher;
 use grep::searcher::{BinaryDetection, SearcherBuilder, Sink};
 use ignore::{WalkBuilder, WalkState};
 use regex::Regex;
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, RwLock};
@@ -53,17 +54,19 @@ impl<'a> Sink for Agregator<'a> {
 
         if let Some(captures) = REGEX.captures(line) {
             if let Some(group) = captures.get(RegexGroup::TARGET as usize) {
-                self.tag_list.targets.push(TagLocation {
+                let tag_name = group.as_str().to_string();
+                self.tag_list.targets.entry(tag_name.clone()).or_default().push(TagLocation {
                     path: Box::from(self.path),
                     line_number: line_number,
-                    line_content: group.as_str().to_string(),
+                    line_content: tag_name,
                 })
             }
             if let Some(group) = captures.get(RegexGroup::LINK as usize) {
-                self.tag_list.links.push(TagLocation {
+                let tag_name = group.as_str().to_string();
+                self.tag_list.links.entry(tag_name.clone()).or_default().push(TagLocation {
                     path: Box::from(self.path),
                     line_number: line_number,
-                    line_content: group.as_str().to_string(),
+                    line_content: tag_name,
                 })
             }
         }
@@ -78,11 +81,9 @@ struct TagLocation {
     line_content: String,
 }
 
-// TODO(mfeist): We should be hashing on tag names instead of doing big vectors. Main use case will
-// be searching for a tag name, so we should optimize that.
 struct TagList {
-    targets: Vec<TagLocation>,
-    links: Vec<TagLocation>,
+    targets: HashMap<String, Vec<TagLocation>>,
+    links: HashMap<String, Vec<TagLocation>>,
 }
 
 struct CombinedTagList {
@@ -127,8 +128,8 @@ fn main() {
             .build();
         let mut buffer = ThreadBuffer {
             tag_list: TagList {
-                targets: vec![],
-                links: vec![],
+                targets: HashMap::new(),
+                links: HashMap::new(),
             },
             combined: combined_tag_list.clone(),
         };
@@ -159,23 +160,27 @@ fn main() {
     // Display tags
     println!("{:?}", cli_args);
     for tag_list in &combined_tag_list.read().unwrap().tag_lists {
-        for target in &tag_list.targets {
-            println!(
-                "[TARGET] {}:{}: {}",
-                target.path.display(),
-                target.line_number,
-                target.line_content
-            );
+        for locations in tag_list.targets.values() {
+            for target in locations {
+                println!(
+                    "[TARGET] {}:{}: {}",
+                    target.path.display(),
+                    target.line_number,
+                    target.line_content
+                );
+            }
         }
     }
     for tag_list in &combined_tag_list.read().unwrap().tag_lists {
-        for link in &tag_list.links {
-            println!(
-                "[LINK] {}:{}: {}",
-                link.path.display(),
-                link.line_number,
-                link.line_content
-            );
+        for locations in tag_list.links.values() {
+            for link in locations {
+                println!(
+                    "[LINK] {}:{}: {}",
+                    link.path.display(),
+                    link.line_number,
+                    link.line_content
+                );
+            }
         }
     }
 }
