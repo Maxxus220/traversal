@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/traversal", "crates/traversal-lsp"]
+members = ["crates/traversal", "crates/traversal-lsp", "crates/traversal-core"]
+
+[workspace.dependencies]
+traversal-core = { path = "crates/traversal-core" }

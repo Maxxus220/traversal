@@ -491,6 +491,13 @@ name = "traversal"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "traversal-core",
+]
+
+[[package]]
+name = "traversal-core"
+version = "0.1.0"
+dependencies = [
  "const_format",
  "grep",
  "ignore",
