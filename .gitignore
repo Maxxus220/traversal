@@ -29,7 +29,8 @@ flamegraph.svg
 # test workspace
 test_workspace_large
 
+# direnv
+.direnv
 
 # Added by cargo
-
 /target
