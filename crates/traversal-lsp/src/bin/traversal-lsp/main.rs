@@ -1,24 +1,21 @@
-use std::{error::Error, io::Write};
+use std::error::Error;
 
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionOptions, CompletionRequest, CompletionResponse,
     Contents, DefinitionRequest, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
-    DidChangeTextDocumentParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams,
-    DocumentFormattingParams, DocumentFormattingRequest, Hover, HoverProvider, HoverRequest,
-    InitializeParams, LspNotificationMethod, LspRequestMethod, MarkupContent, Notification,
-    Position, PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request,
-    ServerCapabilities, TextDocumentSync, TextEdit, Uri,
+    DidChangeTextDocumentParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams, Hover,
+    HoverProvider, HoverRequest, InitializeParams, LspNotificationMethod, LspRequestMethod,
+    MarkupContent, Notification, Position, PublishDiagnosticsNotification,
+    PublishDiagnosticsParams, Range, Request, ServerCapabilities, TextDocumentSync, Uri,
 };
 use rustc_hash::FxHashMap; // fast hash map
-use std::process::Stdio;
-use toolchain::command; // clippy-approved wrapper
 
 #[allow(
     clippy::print_stderr,
     clippy::disallowed_types,
     clippy::disallowed_methods
 )]
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::Result;
 use lsp_server::{
     Connection, Message, Request as ServerRequest, RequestId, Response, ResponseKind,
 };
@@ -42,7 +39,6 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
         completion_provider: Some(CompletionOptions::default()),
         definition_provider: Some(lsp_types::DefinitionProvider::Bool(true)),
         hover_provider: Some(HoverProvider::Bool(true)),
-        document_formatting_provider: Some(lsp_types::DocumentFormattingProvider::Bool(true)),
         ..Default::default()
     };
     let init_value = serde_json::json!({
@@ -167,19 +163,6 @@ fn handle_request(
             };
             send_ok(conn, req.id.clone(), &hover)?;
         }
-        DocumentFormattingRequest::METHOD => {
-            let p: DocumentFormattingParams = serde_json::from_value(req.params.clone())?;
-            let uri = p.text_document.uri;
-            let text = docs
-                .get(&uri)
-                .ok_or_else(|| anyhow!("document not in cache – did you send DidOpen?"))?;
-            let formatted = run_rustfmt(text)?;
-            let edit = TextEdit {
-                range: full_range(text),
-                new_text: formatted,
-            };
-            send_ok(conn, req.id.clone(), &vec![edit])?;
-        }
         _ => send_err(
             conn,
             req.id.clone(),
@@ -221,29 +204,6 @@ fn publish_dummy_diag(conn: &Connection, uri: &Uri) -> Result<()> {
 // =====================================================================
 // helpers
 // =====================================================================
-
-fn run_rustfmt(input: &str) -> Result<String> {
-    let cwd = std::env::current_dir().expect("can't determine CWD");
-    let mut child = command("rustfmt", &cwd, &FxHashMap::default())
-        .arg("--emit")
-        .arg("stdout")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn rustfmt – is it installed?")?;
-
-    let Some(stdin) = child.stdin.as_mut() else {
-        bail!("stdin unavailable");
-    };
-    stdin.write_all(input.as_bytes())?;
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("rustfmt failed: {stderr}");
-    }
-    Ok(String::from_utf8(output.stdout)?)
-}
 
 fn full_range(text: &str) -> Range {
     let last_line_idx = text.lines().count().saturating_sub(1) as u32;
