@@ -1,12 +1,25 @@
+// TODO(mfeist)
+//
+// - Get workspace folders. Not sure if the protocol specifies that root is in
+// workspace folders or not.
+//
+// - Trigger find_tags when we get the initial folders and on any updates.
+//
+// - Get file updates.
+//
+// - Provide document link and document link resolution.
+
 use std::error::Error;
 
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionOptions, CompletionRequest, CompletionResponse,
-    Contents, DefinitionRequest, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
-    DidChangeTextDocumentParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams, Hover,
-    HoverProvider, HoverRequest, InitializeParams, LspNotificationMethod, LspRequestMethod,
-    MarkupContent, Notification, Position, PublishDiagnosticsNotification,
-    PublishDiagnosticsParams, Range, Request, ServerCapabilities, TextDocumentSync, Uri,
+    ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
+    DidChangeTextDocumentParams, DidChangeWorkspaceFoldersNotification,
+    DidChangeWorkspaceFoldersParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams,
+    DocumentLink, DocumentLinkOptions, DocumentLinkRequest, InitializeParams,
+    LspNotificationMethod, LspRequestMethod, Notification, Position,
+    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request, ServerCapabilities,
+    TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFoldersServerCapabilities,
+    WorkspaceOptions,
 };
 use rustc_hash::FxHashMap; // fast hash map
 
@@ -36,9 +49,18 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
         text_document_sync: Some(TextDocumentSync::Kind(
             lsp_types::TextDocumentSyncKind::Full,
         )),
-        completion_provider: Some(CompletionOptions::default()),
-        definition_provider: Some(lsp_types::DefinitionProvider::Bool(true)),
-        hover_provider: Some(HoverProvider::Bool(true)),
+        document_link_provider: Some(DocumentLinkOptions::new(
+            Some(false),
+            WorkDoneProgressOptions::new(Some(false)),
+        )),
+        workspace: Some(WorkspaceOptions::new(
+            Some(WorkspaceFoldersServerCapabilities::new(
+                Some(true),
+                Some(ChangeNotifications::Bool(true)),
+            )),
+            None,
+            None,
+        )),
         ..Default::default()
     };
     let init_value = serde_json::json!({
@@ -114,6 +136,23 @@ fn handle_notification(
                 publish_dummy_diag(conn, &uri)?;
             }
         }
+        DidChangeWorkspaceFoldersNotification::METHOD => {
+            let p: DidChangeWorkspaceFoldersParams = serde_json::from_value(note.params.clone())?;
+            for added in &p.event.added {
+                log::info!(
+                    "[lsp] Added workspace folder '{}': {}",
+                    added.name,
+                    added.uri
+                );
+            }
+            for removed in &p.event.removed {
+                log::info!(
+                    "[lsp] Removed workspace folder '{}': {}",
+                    removed.name,
+                    removed.uri
+                );
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -130,39 +169,26 @@ fn handle_request(
 ) -> Result<()> {
     let parsed: LspRequestMethod<'_> = req.method.as_str().into();
     match parsed {
-        DefinitionRequest::METHOD => {
-            send_ok(
-                conn,
-                req.id.clone(),
-                &lsp_types::DefinitionResponse::DefinitionLinkList(Vec::new()),
-            )?;
+        DocumentLinkRequest::METHOD => {
+            let document_links = Vec::<DocumentLink>::new();
+            send_ok(conn, req.id.clone(), &document_links)?;
         }
-        CompletionRequest::METHOD => {
-            let item = CompletionItem {
-                label: "HelloFromLSP".into(),
-                kind: Some(CompletionItemKind::Function),
-                detail: Some("dummy completion".into()),
-                ..Default::default()
-            };
-            let items = vec![item];
-            let completion_list = CompletionResponse::CompletionList(lsp_types::CompletionList {
-                is_incomplete: false,
-                item_defaults: None,
-                apply_kind: None,
-                items,
-            });
-            send_ok(conn, req.id.clone(), &completion_list)?;
-        }
-        HoverRequest::METHOD => {
-            let hover = Hover {
-                contents: Contents::MarkupContent(MarkupContent {
-                    value: "Hello from *minimal_lsp*".into(),
-                    kind: lsp_types::MarkupKind::Markdown,
-                }),
-                range: None,
-            };
-            send_ok(conn, req.id.clone(), &hover)?;
-        }
+        // CompletionRequest::METHOD => {
+        //     let item = CompletionItem {
+        //         label: "HelloFromLSP".into(),
+        //         kind: Some(CompletionItemKind::Function),
+        //         detail: Some("dummy completion".into()),
+        //         ..Default::default()
+        //     };
+        //     let items = vec![item];
+        //     let completion_list = CompletionResponse::CompletionList(lsp_types::CompletionList {
+        //         is_incomplete: false,
+        //         item_defaults: None,
+        //         apply_kind: None,
+        //         items,
+        //     });
+        //     send_ok(conn, req.id.clone(), &completion_list)?;
+        // }
         _ => send_err(
             conn,
             req.id.clone(),
