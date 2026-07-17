@@ -18,6 +18,7 @@
             clippy
             rustc
             rustfmt
+            nodejs
           ];
 
           RUST_EDITION = "2024";
