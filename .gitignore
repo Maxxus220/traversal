@@ -34,3 +34,7 @@ test_workspace_large
 
 # Added by cargo
 /target
+
+# Node
+node_modules
+out
