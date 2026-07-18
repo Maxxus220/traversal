@@ -39,7 +39,8 @@ use lsp_server::{
 
 #[allow(clippy::print_stderr)]
 fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
-    log::error!("starting minimal_lsp");
+    env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
+    log::info!("Starting traversal-lsp");
 
     // transport
     let (connection, io_thread) = Connection::stdio();
@@ -71,7 +72,7 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
     let init_params = connection.initialize(init_value)?;
     main_loop(connection, init_params)?;
     io_thread.join()?;
-    log::error!("shutting down server");
+    log::info!("shutting down server");
     Ok(())
 }
 
