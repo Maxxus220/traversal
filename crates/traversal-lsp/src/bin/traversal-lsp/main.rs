@@ -18,8 +18,8 @@ use lsp_types::{
     DocumentLink, DocumentLinkOptions, DocumentLinkRequest, InitializeParams,
     LspNotificationMethod, LspRequestMethod, Notification, Position,
     PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request, ServerCapabilities,
-    TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFoldersServerCapabilities,
-    WorkspaceOptions,
+    TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFolders,
+    WorkspaceFoldersServerCapabilities, WorkspaceOptions,
 };
 use rustc_hash::FxHashMap; // fast hash map
 
@@ -84,8 +84,16 @@ fn main_loop(
     connection: Connection,
     params: serde_json::Value,
 ) -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
-    let _init: InitializeParams = serde_json::from_value(params)?;
+    let init: InitializeParams = serde_json::from_value(params)?;
     let mut docs: FxHashMap<Uri, String> = FxHashMap::default();
+
+    if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders {
+        if let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders {
+            for folder in workspace_folders_list {
+                log::info!("{}", folder.uri);
+            }
+        }
+    }
 
     for msg in &connection.receiver {
         match msg {
