@@ -33,6 +33,18 @@ use lsp_server::{
     Connection, Message, Request as ServerRequest, RequestId, Response, ResponseKind,
 };
 
+struct TraversalLspState {
+    workspace_folders: Vec<String>,
+}
+
+impl Default for TraversalLspState {
+    fn default() -> Self {
+        TraversalLspState {
+            workspace_folders: Vec::new(),
+        }
+    }
+}
+
 // =====================================================================
 // main
 // =====================================================================
@@ -84,13 +96,19 @@ fn main_loop(
     connection: Connection,
     params: serde_json::Value,
 ) -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
+    let mut traversal_lsp_state = TraversalLspState::default();
+
     let init: InitializeParams = serde_json::from_value(params)?;
     let mut docs: FxHashMap<Uri, String> = FxHashMap::default();
 
     if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders {
         if let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders {
             for folder in workspace_folders_list {
-                log::info!("{}", folder.uri);
+                assert_eq!(folder.uri.scheme(), "file");
+                log::info!("Adding workspace folder: {}", folder.uri.path());
+                traversal_lsp_state
+                    .workspace_folders
+                    .push(folder.uri.path().to_string());
             }
         }
     }
