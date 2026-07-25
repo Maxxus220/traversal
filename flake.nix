@@ -9,19 +9,21 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = nixpkgs.legacyPackages.${system};
+        toolchain = builtins.fromTOML (builtins.readFile (self + "/rust-toolchain.toml"));
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            cargo
-            clippy
-            rustc
-            rustfmt
-            nodejs
+          nativeBuildInputs = with pkgs; [
+            rustup
           ];
 
-          RUST_EDITION = "2024";
+          RUSTC_VERSION = toolchain.toolchain.channel;
+
+          shellHook = ''
+            export PATH="$PATH:''${CARGO_HOME:-$HOME/.cargo}/bin"
+            export PATH="$PATH:''${RUSTUP_HOME:-$HOME/.rustup}/toolchains/$RUSTC_VERSION-${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin"
+          '';
         };
       });
 }
