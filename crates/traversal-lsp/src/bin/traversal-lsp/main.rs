@@ -11,6 +11,8 @@
 
 use std::error::Error;
 
+use traversal_core::find_tags;
+
 use lsp_types::{
     ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
     DidChangeTextDocumentParams, DidChangeWorkspaceFoldersNotification,
@@ -101,6 +103,7 @@ fn main_loop(
     let init: InitializeParams = serde_json::from_value(params)?;
     let mut docs: FxHashMap<Uri, String> = FxHashMap::default();
 
+    // Extract workspace folders
     if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders {
         if let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders {
             for folder in workspace_folders_list {
@@ -109,6 +112,31 @@ fn main_loop(
                 traversal_lsp_state
                     .workspace_folders
                     .push(folder.uri.path().to_string());
+            }
+        }
+    }
+
+    // Run our first tag find and print our hits
+    let combined_tag_list = find_tags(traversal_lsp_state.workspace_folders.into_iter());
+    for tag_list in combined_tag_list.read().unwrap().tag_lists.iter() {
+        for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
+            for target_tag_location in target_tag_locations {
+                log::info!(
+                    "[TGT] [{}]: {}:{}",
+                    target_tag_name,
+                    target_tag_location.path.to_str().unwrap(),
+                    target_tag_location.line_number
+                );
+            }
+        }
+        for (link_tag_name, link_tag_locations) in tag_list.links.iter() {
+            for link_tag_location in link_tag_locations {
+                log::info!(
+                    "[LNK] [{}]: {}:{}",
+                    link_tag_name,
+                    link_tag_location.path.to_str().unwrap(),
+                    link_tag_location.line_number
+                );
             }
         }
     }
