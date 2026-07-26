@@ -83,10 +83,12 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
         "offsetEncoding": ["utf-8"],
     });
 
+    let options = DidChangeWatchedFilesRegistrationOptions::new();
+
     let init_params = connection.initialize(init_value)?;
     main_loop(connection, init_params)?;
     io_thread.join()?;
-    log::info!("shutting down server");
+    log::info!("Shutting down...");
     Ok(())
 }
 
@@ -141,6 +143,7 @@ fn main_loop(
         }
     }
 
+    // Loop on incoming messages
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
