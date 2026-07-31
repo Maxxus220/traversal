@@ -15,12 +15,13 @@ use traversal_core::find_tags;
 
 use lsp_types::{
     ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
-    DidChangeTextDocumentParams, DidChangeWorkspaceFoldersNotification,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesNotification, DidChangeWatchedFilesParams,
+    DidChangeWatchedFilesRegistrationOptions, DidChangeWorkspaceFoldersNotification,
     DidChangeWorkspaceFoldersParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams,
-    DocumentLink, DocumentLinkOptions, DocumentLinkRequest, InitializeParams,
-    LspNotificationMethod, LspRequestMethod, Notification, Position,
-    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request, ServerCapabilities,
-    TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFolders,
+    DocumentLink, DocumentLinkOptions, DocumentLinkRequest, FileSystemWatcher, GlobPattern,
+    InitializeParams, LspNotificationMethod, LspRequestMethod, Notification, Position,
+    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Registration, Request,
+    ServerCapabilities, TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFolders,
     WorkspaceFoldersServerCapabilities, WorkspaceOptions,
 };
 use rustc_hash::FxHashMap; // fast hash map
@@ -83,8 +84,6 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
         "offsetEncoding": ["utf-8"],
     });
 
-    let options = DidChangeWatchedFilesRegistrationOptions::new();
-
     let init_params = connection.initialize(init_value)?;
     main_loop(connection, init_params)?;
     io_thread.join()?;
@@ -103,6 +102,34 @@ fn main_loop(
     let mut traversal_lsp_state = TraversalLspState::default();
 
     let init: InitializeParams = serde_json::from_value(params)?;
+
+    // Ensure client supports required LSP capabilities
+    init.capabilities
+        .workspace
+        .expect("Client doesn't support workspaces")
+        .did_change_watched_files
+        .expect("Client does not support 'DidChangeWatchedFiles'")
+        .dynamic_registration
+        .expect("Client does not support dyanmic registration");
+
+    let options = DidChangeWatchedFilesRegistrationOptions::new(vec![FileSystemWatcher::new(
+        GlobPattern::Pattern("**/*".to_string()),
+        None,
+    )]);
+    let watcher_registration = Registration::new(
+        "traversal-watcher".into(),
+        "workspace/didChangeWatchedFiles".into(),
+        Some(serde_json::to_value(options).unwrap()),
+    );
+    connection
+        .sender
+        .send(Message::Request(lsp_server::Request::new(
+            RequestId::from(1),
+            "workspace/didChangeWatchedFiles".into(),
+            watcher_registration,
+        )))
+        .expect("Failed to send watcher registration");
+
     let mut docs: FxHashMap<Uri, String> = FxHashMap::default();
 
     // Extract workspace folders
@@ -210,6 +237,10 @@ fn handle_notification(
                     removed.uri
                 );
             }
+        }
+        DidChangeWatchedFilesNotification::METHOD => {
+            let _p: DidChangeWatchedFilesParams = serde_json::from_value(note.params.clone())?;
+            log::info!("[lsp] Received DidChangeWatchedFiles");
         }
         _ => {}
     }
