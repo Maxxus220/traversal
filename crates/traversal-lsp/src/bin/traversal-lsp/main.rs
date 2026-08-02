@@ -9,9 +9,12 @@
 //
 // - Provide document link and document link resolution.
 
-use std::error::Error;
+use std::{
+    error::Error,
+    sync::{Arc, RwLock},
+};
 
-use traversal_core::find_tags;
+use traversal_core::{CombinedTagList, find_tags};
 
 use lsp_types::{
     ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
@@ -39,15 +42,21 @@ use lsp_server::{
 
 struct TraversalLspState {
     workspace_folders: Vec<String>,
+    tags: Arc<RwLock<CombinedTagList>>,
 }
 
 impl Default for TraversalLspState {
     fn default() -> Self {
         TraversalLspState {
             workspace_folders: Vec::new(),
+            tags: Arc::new(RwLock::new(CombinedTagList {
+                tag_lists: Vec::new(),
+            })),
         }
     }
 }
+
+fn print_tags(tags: &CombinedTagList) {}
 
 // =====================================================================
 // main
@@ -148,8 +157,8 @@ fn main_loop(
     }
 
     // Run our first tag find and print our hits
-    let combined_tag_list = find_tags(traversal_lsp_state.workspace_folders.into_iter());
-    for tag_list in combined_tag_list.read().unwrap().tag_lists.iter() {
+    traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+    for tag_list in traversal_lsp_state.tags.read().unwrap().tag_lists.iter() {
         for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
             for target_tag_location in target_tag_locations {
                 log::info!(
@@ -184,7 +193,9 @@ fn main_loop(
                 }
             }
             Message::Notification(note) => {
-                if let Err(err) = handle_notification(&connection, &note, &mut docs) {
+                if let Err(err) =
+                    handle_notification(&connection, &note, &mut docs, &mut traversal_lsp_state)
+                {
                     log::error!("[lsp] notification {} failed: {err}", note.method);
                 }
             }
@@ -202,6 +213,7 @@ fn handle_notification(
     conn: &Connection,
     note: &lsp_server::Notification,
     docs: &mut FxHashMap<Uri, String>,
+    traversal_lsp_state: &mut TraversalLspState,
 ) -> Result<()> {
     let method: LspNotificationMethod<'_> = note.method.as_str().into();
     match method {
@@ -243,6 +255,7 @@ fn handle_notification(
         DidChangeWatchedFilesNotification::METHOD => {
             let _p: DidChangeWatchedFilesParams = serde_json::from_value(note.params.clone())?;
             log::info!("[lsp] Received DidChangeWatchedFiles");
+            traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
         }
         _ => {}
     }
