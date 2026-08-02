@@ -20,9 +20,10 @@ use lsp_types::{
     DidChangeWorkspaceFoldersParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams,
     DocumentLink, DocumentLinkOptions, DocumentLinkRequest, FileSystemWatcher, GlobPattern,
     InitializeParams, LspNotificationMethod, LspRequestMethod, Notification, Position,
-    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Registration, Request,
-    ServerCapabilities, TextDocumentSync, Uri, WorkDoneProgressOptions, WorkspaceFolders,
-    WorkspaceFoldersServerCapabilities, WorkspaceOptions,
+    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Registration,
+    RegistrationParams, Request, ServerCapabilities, TextDocumentSync, Uri,
+    WorkDoneProgressOptions, WorkspaceFolders, WorkspaceFoldersServerCapabilities,
+    WorkspaceOptions,
 };
 use rustc_hash::FxHashMap; // fast hash map
 
@@ -121,12 +122,13 @@ fn main_loop(
         "workspace/didChangeWatchedFiles".into(),
         Some(serde_json::to_value(options).unwrap()),
     );
+    let registration_params = RegistrationParams::new(vec![watcher_registration]);
     connection
         .sender
         .send(Message::Request(lsp_server::Request::new(
             RequestId::from(1),
-            "workspace/didChangeWatchedFiles".into(),
-            watcher_registration,
+            "client/registerCapability".into(),
+            registration_params,
         )))
         .expect("Failed to send watcher registration");
 
@@ -186,7 +188,7 @@ fn main_loop(
                     log::error!("[lsp] notification {} failed: {err}", note.method);
                 }
             }
-            Message::Response(resp) => log::error!("[lsp] response: {resp:?}"),
+            Message::Response(resp) => log::info!("[lsp] response: {resp:?}"),
         }
     }
     Ok(())
