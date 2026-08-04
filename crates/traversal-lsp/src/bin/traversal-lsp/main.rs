@@ -56,7 +56,30 @@ impl Default for TraversalLspState {
     }
 }
 
-fn print_tags(tags: &CombinedTagList) {}
+fn print_tags(tags: &CombinedTagList) {
+    for tag_list in tags.tag_lists.iter() {
+        for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
+            for target_tag_location in target_tag_locations {
+                log::info!(
+                    "[TGT] [{}]: {}:{}",
+                    target_tag_name,
+                    target_tag_location.path.to_str().unwrap(),
+                    target_tag_location.line_number
+                );
+            }
+        }
+        for (link_tag_name, link_tag_locations) in tag_list.links.iter() {
+            for link_tag_location in link_tag_locations {
+                log::info!(
+                    "[LNK] [{}]: {}:{}",
+                    link_tag_name,
+                    link_tag_location.path.to_str().unwrap(),
+                    link_tag_location.line_number
+                );
+            }
+        }
+    }
+}
 
 // =====================================================================
 // main
@@ -158,28 +181,7 @@ fn main_loop(
 
     // Run our first tag find and print our hits
     traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
-    for tag_list in traversal_lsp_state.tags.read().unwrap().tag_lists.iter() {
-        for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
-            for target_tag_location in target_tag_locations {
-                log::info!(
-                    "[TGT] [{}]: {}:{}",
-                    target_tag_name,
-                    target_tag_location.path.to_str().unwrap(),
-                    target_tag_location.line_number
-                );
-            }
-        }
-        for (link_tag_name, link_tag_locations) in tag_list.links.iter() {
-            for link_tag_location in link_tag_locations {
-                log::info!(
-                    "[LNK] [{}]: {}:{}",
-                    link_tag_name,
-                    link_tag_location.path.to_str().unwrap(),
-                    link_tag_location.line_number
-                );
-            }
-        }
-    }
+    print_tags(&traversal_lsp_state.tags.read().unwrap());
 
     // Loop on incoming messages
     for msg in &connection.receiver {
@@ -256,6 +258,7 @@ fn handle_notification(
             let _p: DidChangeWatchedFilesParams = serde_json::from_value(note.params.clone())?;
             log::info!("[lsp] Received DidChangeWatchedFiles");
             traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+            print_tags(&traversal_lsp_state.tags.read().unwrap());
         }
         _ => {}
     }
