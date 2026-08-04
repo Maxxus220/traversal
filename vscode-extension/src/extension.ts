@@ -3,14 +3,12 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
-import * as path from 'path';
-import { workspace, ExtensionContext, window } from 'vscode';
+import { workspace, ExtensionContext, window, ExtensionMode } from 'vscode';
 
 import {
 	LanguageClient,
 	LanguageClientOptions,
 	ServerOptions,
-	TransportKind
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
@@ -22,6 +20,11 @@ export function activate(context: ExtensionContext) {
 	// Otherwise the run options are used
 	const serverOptions: ServerOptions = {
 		command: "traversal-lsp",
+		options: {
+			env: context.extensionMode === ExtensionMode.Development
+				? { ...process.env, RUST_LOG: "debug" }
+				: undefined,
+		},
 	};
 
 	// Options to control the language client

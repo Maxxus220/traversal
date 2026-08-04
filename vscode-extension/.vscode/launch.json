@@ -12,9 +12,6 @@
             "preLaunchTask": "npm",
             "request": "launch",
             "type": "extensionHost",
-            "env": {
-                "RUST_LOG": "debug"
-            }
         }
     ]
 }
