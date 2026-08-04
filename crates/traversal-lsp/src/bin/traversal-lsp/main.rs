@@ -55,7 +55,7 @@ impl Default for TraversalLspState {
     }
 }
 
-fn print_tags(tags: &CombinedTagList) {
+fn _print_tags(tags: &CombinedTagList) {
     for tag_list in tags.tag_lists.iter() {
         for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
             for target_tag_location in target_tag_locations {
@@ -189,7 +189,6 @@ fn main_loop(
         let _tracing_span = info_span!("find_tags_init").entered();
         traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
     }
-    print_tags(&traversal_lsp_state.tags.read().unwrap());
 
     // Loop on incoming messages
     for msg in &connection.receiver {
@@ -247,7 +246,6 @@ fn handle_notification(
                 let _tracing_span = info_span!("find_tags").entered();
                 traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
             }
-            print_tags(&traversal_lsp_state.tags.read().unwrap());
         }
         _ => {}
     }
