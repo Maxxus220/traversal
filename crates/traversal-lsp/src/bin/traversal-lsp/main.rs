@@ -14,6 +14,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use tracing::{Level, dispatcher, info_span};
+
+use tracing_subscriber::EnvFilter;
 use traversal_core::{CombinedTagList, find_tags};
 
 use lsp_types::{
@@ -87,7 +90,13 @@ fn print_tags(tags: &CombinedTagList) {
 
 #[allow(clippy::print_stderr)]
 fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
-    env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
+    // env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
     log::info!("Starting traversal-lsp");
 
     // transport
@@ -164,8 +173,6 @@ fn main_loop(
         )))
         .expect("Failed to send watcher registration");
 
-    let mut docs: FxHashMap<Uri, String> = FxHashMap::default();
-
     // Extract workspace folders
     if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders {
         if let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders {
@@ -180,7 +187,10 @@ fn main_loop(
     }
 
     // Run our first tag find and print our hits
-    traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+    {
+        let _tracing_span = info_span!("find_tags_init").entered();
+        traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+    }
     print_tags(&traversal_lsp_state.tags.read().unwrap());
 
     // Loop on incoming messages
@@ -190,13 +200,12 @@ fn main_loop(
                 if connection.handle_shutdown(&req)? {
                     break;
                 }
-                if let Err(err) = handle_request(&connection, &req, &mut docs) {
+                if let Err(err) = handle_request(&connection, &req) {
                     log::error!("[lsp] request {} failed: {err}", req.method);
                 }
             }
             Message::Notification(note) => {
-                if let Err(err) =
-                    handle_notification(&connection, &note, &mut docs, &mut traversal_lsp_state)
+                if let Err(err) = handle_notification(&connection, &note, &mut traversal_lsp_state)
                 {
                     log::error!("[lsp] notification {} failed: {err}", note.method);
                 }
@@ -214,29 +223,10 @@ fn main_loop(
 fn handle_notification(
     conn: &Connection,
     note: &lsp_server::Notification,
-    docs: &mut FxHashMap<Uri, String>,
     traversal_lsp_state: &mut TraversalLspState,
 ) -> Result<()> {
     let method: LspNotificationMethod<'_> = note.method.as_str().into();
     match method {
-        DidOpenTextDocumentNotification::METHOD => {
-            let p: DidOpenTextDocumentParams = serde_json::from_value(note.params.clone())?;
-            let uri = p.text_document.uri;
-            docs.insert(uri.clone(), p.text_document.text);
-            publish_dummy_diag(conn, &uri)?;
-        }
-        DidChangeTextDocumentNotification::METHOD => {
-            let p: DidChangeTextDocumentParams = serde_json::from_value(note.params.clone())?;
-            if let Some(change) = p.content_changes.into_iter().next() {
-                let uri = p.text_document.text_document_identifier.uri;
-                let text = match change {
-                    lsp_types::TextDocumentContentChangeEvent::TextDocumentContentChangePartial(partial) => partial.text,
-                    lsp_types::TextDocumentContentChangeEvent::TextDocumentContentChangeWholeDocument(whole) => whole.text,
-                };
-                docs.insert(uri.clone(), text);
-                publish_dummy_diag(conn, &uri)?;
-            }
-        }
         DidChangeWorkspaceFoldersNotification::METHOD => {
             let p: DidChangeWorkspaceFoldersParams = serde_json::from_value(note.params.clone())?;
             for added in &p.event.added {
@@ -257,7 +247,10 @@ fn handle_notification(
         DidChangeWatchedFilesNotification::METHOD => {
             let _p: DidChangeWatchedFilesParams = serde_json::from_value(note.params.clone())?;
             log::info!("[lsp] Received DidChangeWatchedFiles");
-            traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+            {
+                let _tracing_span = info_span!("find_tags").entered();
+                traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+            }
             print_tags(&traversal_lsp_state.tags.read().unwrap());
         }
         _ => {}
@@ -269,11 +262,7 @@ fn handle_notification(
 // requests
 // =====================================================================
 
-fn handle_request(
-    conn: &Connection,
-    req: &ServerRequest,
-    docs: &mut FxHashMap<Uri, String>,
-) -> Result<()> {
+fn handle_request(conn: &Connection, req: &ServerRequest) -> Result<()> {
     let parsed: LspRequestMethod<'_> = req.method.as_str().into();
     match parsed {
         DocumentLinkRequest::METHOD => {
