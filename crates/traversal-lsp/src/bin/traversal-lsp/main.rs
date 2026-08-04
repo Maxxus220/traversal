@@ -20,13 +20,11 @@ use tracing_subscriber::EnvFilter;
 use traversal_core::{CombinedTagList, find_tags};
 
 use lsp_types::{
-    ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeWatchedFilesNotification,
-    DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
-    DidChangeWorkspaceFoldersNotification, DidChangeWorkspaceFoldersParams, DocumentLink,
-    DocumentLinkOptions, DocumentLinkRequest, FileSystemWatcher, GlobPattern, InitializeParams,
-    LspNotificationMethod, LspRequestMethod, Notification, Position,
-    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Registration,
-    RegistrationParams, Request, ServerCapabilities, TextDocumentSync, Uri,
+    ChangeNotifications, DidChangeWatchedFilesNotification, DidChangeWatchedFilesParams,
+    DidChangeWatchedFilesRegistrationOptions, DidChangeWorkspaceFoldersNotification,
+    DidChangeWorkspaceFoldersParams, DocumentLink, DocumentLinkOptions, DocumentLinkRequest,
+    FileSystemWatcher, GlobPattern, InitializeParams, LspNotificationMethod, LspRequestMethod,
+    Notification, Registration, RegistrationParams, Request, ServerCapabilities, TextDocumentSync,
     WorkDoneProgressOptions, WorkspaceFolders, WorkspaceFoldersServerCapabilities,
     WorkspaceOptions,
 };
@@ -174,15 +172,15 @@ fn main_loop(
         .expect("Failed to send watcher registration");
 
     // Extract workspace folders
-    if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders {
-        if let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders {
-            for folder in workspace_folders_list {
-                assert_eq!(folder.uri.scheme(), "file");
-                log::info!("Adding workspace folder: {}", folder.uri.path());
-                traversal_lsp_state
-                    .workspace_folders
-                    .push(folder.uri.path().to_string());
-            }
+    if let Some(workspace_folders) = init.workspace_folders_initialize_params.workspace_folders
+        && let WorkspaceFolders::WorkspaceFolderList(workspace_folders_list) = workspace_folders
+    {
+        for folder in workspace_folders_list {
+            assert_eq!(folder.uri.scheme(), "file");
+            log::info!("Adding workspace folder: {}", folder.uri.path());
+            traversal_lsp_state
+                .workspace_folders
+                .push(folder.uri.path().to_string());
         }
     }
 
@@ -205,8 +203,7 @@ fn main_loop(
                 }
             }
             Message::Notification(note) => {
-                if let Err(err) = handle_notification(&connection, &note, &mut traversal_lsp_state)
-                {
+                if let Err(err) = handle_notification(&note, &mut traversal_lsp_state) {
                     log::error!("[lsp] notification {} failed: {err}", note.method);
                 }
             }
@@ -221,7 +218,6 @@ fn main_loop(
 // =====================================================================
 
 fn handle_notification(
-    conn: &Connection,
     note: &lsp_server::Notification,
     traversal_lsp_state: &mut TraversalLspState,
 ) -> Result<()> {
@@ -296,42 +292,8 @@ fn handle_request(conn: &Connection, req: &ServerRequest) -> Result<()> {
 }
 
 // =====================================================================
-// diagnostics
-// =====================================================================
-fn publish_dummy_diag(conn: &Connection, uri: &Uri) -> Result<()> {
-    let diag = Diagnostic {
-        range: Range::new(Position::new(0, 0), Position::new(0, 1)),
-        severity: Some(DiagnosticSeverity::Information),
-        code: None,
-        code_description: None,
-        source: Some("minimal_lsp".into()),
-        message: "dummy diagnostic".into(),
-        related_information: None,
-        tags: None,
-        data: None,
-    };
-    let params = PublishDiagnosticsParams {
-        uri: uri.clone(),
-        diagnostics: vec![diag],
-        version: None,
-    };
-    conn.sender
-        .send(Message::Notification(lsp_server::Notification::new(
-            PublishDiagnosticsNotification::METHOD.into(),
-            params,
-        )))?;
-    Ok(())
-}
-
-// =====================================================================
 // helpers
 // =====================================================================
-
-fn full_range(text: &str) -> Range {
-    let last_line_idx = text.lines().count().saturating_sub(1) as u32;
-    let last_col = text.lines().last().map_or(0, |l| l.chars().count()) as u32;
-    Range::new(Position::new(0, 0), Position::new(last_line_idx, last_col))
-}
 
 fn send_ok<T: serde::Serialize>(conn: &Connection, id: RequestId, result: &T) -> Result<()> {
     let resp = Response {

@@ -14,15 +14,15 @@ macro_rules! make_traverse_tag_regex {
     };
 }
 
-const TARGET_TAG_REGEX: &'static str = make_traverse_tag_regex!("tgt");
-const LINK_TAG_REGEX: &'static str = make_traverse_tag_regex!("lnk");
-const REGEX_STR: &'static str = formatcp!("{TARGET_TAG_REGEX}|{LINK_TAG_REGEX}");
+const TARGET_TAG_REGEX: &str = make_traverse_tag_regex!("tgt");
+const LINK_TAG_REGEX: &str = make_traverse_tag_regex!("lnk");
+const REGEX_STR: &str = formatcp!("{TARGET_TAG_REGEX}|{LINK_TAG_REGEX}");
 static REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(REGEX_STR).expect("Failed to create regex"));
 
 enum RegexGroup {
-    TARGET = 1,
-    LINK = 2,
+    Target = 1,
+    Link = 2,
 }
 
 struct Agregator<'a> {
@@ -45,7 +45,7 @@ impl<'a> Sink for Agregator<'a> {
         let line = std::str::from_utf8(bytes).unwrap_or("");
 
         if let Some(captures) = REGEX.captures(line) {
-            if let Some(group) = captures.get(RegexGroup::TARGET as usize) {
+            if let Some(group) = captures.get(RegexGroup::Target as usize) {
                 let tag_name = group.as_str().to_string();
                 self.tag_list
                     .targets
@@ -53,11 +53,11 @@ impl<'a> Sink for Agregator<'a> {
                     .or_default()
                     .push(TagLocation {
                         path: Box::from(self.path),
-                        line_number: line_number,
+                        line_number,
                         line_content: tag_name,
                     })
             }
-            if let Some(group) = captures.get(RegexGroup::LINK as usize) {
+            if let Some(group) = captures.get(RegexGroup::Link as usize) {
                 let tag_name = group.as_str().to_string();
                 self.tag_list
                     .links
@@ -65,7 +65,7 @@ impl<'a> Sink for Agregator<'a> {
                     .or_default()
                     .push(TagLocation {
                         path: Box::from(self.path),
-                        line_number: line_number,
+                        line_number,
                         line_content: tag_name,
                     })
             }
