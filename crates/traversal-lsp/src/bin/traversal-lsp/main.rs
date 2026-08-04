@@ -14,24 +14,22 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use tracing::{Level, dispatcher, info_span};
+use tracing::info_span;
 
 use tracing_subscriber::EnvFilter;
 use traversal_core::{CombinedTagList, find_tags};
 
 use lsp_types::{
-    ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentNotification,
-    DidChangeTextDocumentParams, DidChangeWatchedFilesNotification, DidChangeWatchedFilesParams,
-    DidChangeWatchedFilesRegistrationOptions, DidChangeWorkspaceFoldersNotification,
-    DidChangeWorkspaceFoldersParams, DidOpenTextDocumentNotification, DidOpenTextDocumentParams,
-    DocumentLink, DocumentLinkOptions, DocumentLinkRequest, FileSystemWatcher, GlobPattern,
-    InitializeParams, LspNotificationMethod, LspRequestMethod, Notification, Position,
+    ChangeNotifications, Diagnostic, DiagnosticSeverity, DidChangeWatchedFilesNotification,
+    DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
+    DidChangeWorkspaceFoldersNotification, DidChangeWorkspaceFoldersParams, DocumentLink,
+    DocumentLinkOptions, DocumentLinkRequest, FileSystemWatcher, GlobPattern, InitializeParams,
+    LspNotificationMethod, LspRequestMethod, Notification, Position,
     PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Registration,
     RegistrationParams, Request, ServerCapabilities, TextDocumentSync, Uri,
     WorkDoneProgressOptions, WorkspaceFolders, WorkspaceFoldersServerCapabilities,
     WorkspaceOptions,
 };
-use rustc_hash::FxHashMap; // fast hash map
 
 #[allow(
     clippy::print_stderr,
@@ -92,7 +90,9 @@ fn print_tags(tags: &CombinedTagList) {
 fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
     // env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
     tracing_subscriber::fmt()
+        .with_ansi(false)
         .with_writer(std::io::stderr)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )

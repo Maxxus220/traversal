@@ -108,21 +108,23 @@ impl Drop for ThreadBuffer {
 pub fn find_tags(
     paths: impl IntoIterator<Item = impl AsRef<Path>>,
 ) -> Arc<RwLock<CombinedTagList>> {
+    let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
+
     let matcher = Arc::new(
         RegexMatcher::new_line_matcher(REGEX_STR).expect("Failed to create RegexMatcher."),
     );
 
     let mut paths_iter = paths.into_iter();
-    let mut walk_builder = WalkBuilder::new(
-        paths_iter
-            .next()
-            .expect("Expected paths to have at least one item."),
-    );
+    let first_path = match paths_iter.next() {
+        Some(path) => path,
+        None => return combined_tag_list,
+    };
+
+    let mut walk_builder = WalkBuilder::new(first_path);
     for path in paths_iter {
         walk_builder.add(path);
     }
 
-    let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
     let walker = walk_builder.build_parallel();
 
     // Iterate over all files in provided paths except ignored files
