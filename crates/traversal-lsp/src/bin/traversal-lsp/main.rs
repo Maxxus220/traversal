@@ -1,12 +1,5 @@
 // TODO(mfeist)
 //
-// - Get workspace folders. Not sure if the protocol specifies that root is in
-// workspace folders or not.
-//
-// - Trigger find_tags when we get the initial folders and on any updates.
-//
-// - Get file updates.
-//
 // - Provide document link and document link resolution.
 
 use std::{
@@ -14,7 +7,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use tracing::info_span;
+use tracing::debug_span;
 
 use tracing_subscriber::EnvFilter;
 use traversal_core::{CombinedTagList, find_tags};
@@ -86,7 +79,6 @@ fn _print_tags(tags: &CombinedTagList) {
 
 #[allow(clippy::print_stderr)]
 fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
-    // env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
     tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(std::io::stderr)
@@ -186,7 +178,7 @@ fn main_loop(
 
     // Run our first tag find and print our hits
     {
-        let _tracing_span = info_span!("find_tags_init").entered();
+        let _tracing_span = debug_span!("find_tags_init").entered();
         traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
     }
 
@@ -243,7 +235,7 @@ fn handle_notification(
             let _p: DidChangeWatchedFilesParams = serde_json::from_value(note.params.clone())?;
             log::info!("[lsp] Received DidChangeWatchedFiles");
             {
-                let _tracing_span = info_span!("find_tags").entered();
+                let _tracing_span = debug_span!("find_tags").entered();
                 traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
             }
         }
