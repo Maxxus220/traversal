@@ -2,7 +2,10 @@
 //
 // - Provide document link and document link resolution.
 
-use std::error::Error;
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use tracing::debug_span;
 
@@ -12,9 +15,9 @@ use traversal_core::{TagRegistry, aggregate_tags, find_tags};
 use lsp_types::{
     ChangeNotifications, DidChangeWatchedFilesNotification, DidChangeWatchedFilesParams,
     DidChangeWatchedFilesRegistrationOptions, DidChangeWorkspaceFoldersNotification,
-    DidChangeWorkspaceFoldersParams, DocumentLink, DocumentLinkOptions, DocumentLinkRequest,
-    FileSystemWatcher, GlobPattern, InitializeParams, LspNotificationMethod, LspRequestMethod,
-    Notification, Registration, RegistrationParams, Request, ServerCapabilities, TextDocumentSync,
+    DidChangeWorkspaceFoldersParams, DocumentLink, DocumentLinkOptions, DocumentLinkParams,
+    DocumentLinkRequest, FileSystemWatcher, GlobPattern, InitializeParams, LspNotificationMethod,
+    LspRequestMethod, Notification, Registration, RegistrationParams, Request, ServerCapabilities,
     WorkDoneProgressOptions, WorkspaceFolders, WorkspaceFoldersServerCapabilities,
     WorkspaceOptions,
 };
@@ -30,7 +33,7 @@ use lsp_server::{
 };
 
 struct TraversalLspState {
-    workspace_folders: Vec<String>,
+    workspace_folders: Vec<PathBuf>,
     tags: TagRegistry,
 }
 
@@ -83,11 +86,8 @@ fn main() -> std::result::Result<(), Box<dyn Error + Sync + Send>> {
 
     // advertised capabilities
     let caps = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSync::Kind(
-            lsp_types::TextDocumentSyncKind::Full,
-        )),
         document_link_provider: Some(DocumentLinkOptions::new(
-            Some(false),
+            Some(true),
             WorkDoneProgressOptions::new(Some(false)),
         )),
         workspace: Some(WorkspaceOptions::new(
@@ -161,14 +161,15 @@ fn main_loop(
             log::info!("Adding workspace folder: {}", folder.uri.path());
             traversal_lsp_state
                 .workspace_folders
-                .push(folder.uri.path().to_string());
+                .push(PathBuf::from(folder.uri.path()));
         }
     }
 
-    // Run our first tag find and print our hits
+    // Run our first tag find
     {
         let _tracing_span = debug_span!("find_tags_init").entered();
-        traversal_lsp_state.tags = aggregate_tags(find_tags(&traversal_lsp_state.workspace_folders));
+        traversal_lsp_state.tags =
+            aggregate_tags(find_tags(&traversal_lsp_state.workspace_folders));
     }
 
     // Loop on incoming messages
@@ -178,7 +179,7 @@ fn main_loop(
                 if connection.handle_shutdown(&req)? {
                     break;
                 }
-                if let Err(err) = handle_request(&connection, &req) {
+                if let Err(err) = handle_request(&connection, &req, &traversal_lsp_state) {
                     log::error!("[lsp] request {} failed: {err}", req.method);
                 }
             }
@@ -238,12 +239,27 @@ fn handle_notification(
 // requests
 // =====================================================================
 
-fn handle_request(conn: &Connection, req: &ServerRequest) -> Result<()> {
+fn handle_request(
+    conn: &Connection,
+    req: &ServerRequest,
+    traversal_lsp_state: &TraversalLspState,
+) -> Result<()> {
     let parsed: LspRequestMethod<'_> = req.method.as_str().into();
     match parsed {
         DocumentLinkRequest::METHOD => {
-            let document_links = Vec::<DocumentLink>::new();
-            send_ok(conn, req.id.clone(), &document_links)?;
+            let document_link_req: DocumentLinkParams = serde_json::from_value(req.params.clone())?;
+            assert_eq!(document_link_req.text_document.uri.scheme(), "file");
+            let document_path = Path::new(document_link_req.text_document.uri.path());
+            let link_tags_opt = traversal_lsp_state
+                .tags
+                .link_tags
+                .tag_indices_by_file
+                .get(document_path);
+            match link_tags_opt {
+                // TODO(mfeist): Actually convert link_tags to valid DocumentLinks
+                Some(link_tags) => send_ok(conn, req.id.clone(), &Vec::<DocumentLink>::new()),
+                None => send_ok(conn, req.id.clone(), &Vec::<DocumentLink>::new()),
+            };
         }
         // CompletionRequest::METHOD => {
         //     let item = CompletionItem {
