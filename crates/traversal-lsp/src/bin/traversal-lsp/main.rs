@@ -2,15 +2,12 @@
 //
 // - Provide document link and document link resolution.
 
-use std::{
-    error::Error,
-    sync::{Arc, RwLock},
-};
+use std::error::Error;
 
 use tracing::debug_span;
 
 use tracing_subscriber::EnvFilter;
-use traversal_core::{CombinedTagList, find_tags};
+use traversal_core::{TagRegistry, aggregate_tags, find_tags};
 
 use lsp_types::{
     ChangeNotifications, DidChangeWatchedFilesNotification, DidChangeWatchedFilesParams,
@@ -34,42 +31,34 @@ use lsp_server::{
 
 struct TraversalLspState {
     workspace_folders: Vec<String>,
-    tags: Arc<RwLock<CombinedTagList>>,
+    tags: TagRegistry,
 }
 
 impl Default for TraversalLspState {
     fn default() -> Self {
         TraversalLspState {
             workspace_folders: Vec::new(),
-            tags: Arc::new(RwLock::new(CombinedTagList {
-                tag_lists: Vec::new(),
-            })),
+            tags: TagRegistry::new(),
         }
     }
 }
 
-fn _print_tags(tags: &CombinedTagList) {
-    for tag_list in tags.tag_lists.iter() {
-        for (target_tag_name, target_tag_locations) in tag_list.targets.iter() {
-            for target_tag_location in target_tag_locations {
-                log::info!(
-                    "[TGT] [{}]: {}:{}",
-                    target_tag_name,
-                    target_tag_location.path.to_str().unwrap(),
-                    target_tag_location.line_number
-                );
-            }
-        }
-        for (link_tag_name, link_tag_locations) in tag_list.links.iter() {
-            for link_tag_location in link_tag_locations {
-                log::info!(
-                    "[LNK] [{}]: {}:{}",
-                    link_tag_name,
-                    link_tag_location.path.to_str().unwrap(),
-                    link_tag_location.line_number
-                );
-            }
-        }
+fn _print_tags(tags: &TagRegistry) {
+    for target in tags.target_tags.tags.iter() {
+        log::info!(
+            "[TGT] [{}]: {}:{}",
+            target.id,
+            target.file_path.to_str().unwrap(),
+            target.line_number
+        );
+    }
+    for link in tags.link_tags.tags.iter() {
+        log::info!(
+            "[LNK] [{}]: {}:{}",
+            link.id,
+            link.file_path.to_str().unwrap(),
+            link.line_number
+        );
     }
 }
 
@@ -179,7 +168,7 @@ fn main_loop(
     // Run our first tag find and print our hits
     {
         let _tracing_span = debug_span!("find_tags_init").entered();
-        traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+        traversal_lsp_state.tags = aggregate_tags(find_tags(&traversal_lsp_state.workspace_folders));
     }
 
     // Loop on incoming messages
@@ -236,7 +225,8 @@ fn handle_notification(
             log::info!("[lsp] Received DidChangeWatchedFiles");
             {
                 let _tracing_span = debug_span!("find_tags").entered();
-                traversal_lsp_state.tags = find_tags(&traversal_lsp_state.workspace_folders);
+                traversal_lsp_state.tags =
+                    aggregate_tags(find_tags(&traversal_lsp_state.workspace_folders));
             }
         }
         _ => {}

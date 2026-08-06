@@ -16,27 +16,21 @@ fn main() {
 
     // Display tags
     for tag_list in &combined_tag_list.read().unwrap().tag_lists {
-        for locations in tag_list.targets.values() {
-            for target in locations {
-                println!(
-                    "[TARGET] {}:{}: {}",
-                    target.path.display(),
-                    target.line_number,
-                    target.line_content
-                );
-            }
+        for target in &tag_list.target_tags {
+            println!(
+                "[TARGET] {}:{}: {}",
+                target.file_path.display(),
+                target.line_number,
+                target.id
+            );
         }
-    }
-    for tag_list in &combined_tag_list.read().unwrap().tag_lists {
-        for locations in tag_list.links.values() {
-            for link in locations {
-                println!(
-                    "[LINK] {}:{}: {}",
-                    link.path.display(),
-                    link.line_number,
-                    link.line_content
-                );
-            }
+        for link in &tag_list.link_tags {
+            println!(
+                "[LINK] {}:{}: {}",
+                link.file_path.display(),
+                link.line_number,
+                link.id
+            );
         }
     }
 }

@@ -5,7 +5,7 @@ use ignore::{WalkBuilder, WalkState};
 use regex::Regex;
 use std::collections::HashMap;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, RwLock};
 
 macro_rules! make_traverse_tag_regex {
@@ -25,12 +25,12 @@ enum RegexGroup {
     Link = 2,
 }
 
-struct Agregator<'a> {
+struct Aggregator<'a> {
     tag_list: &'a mut TagList,
     path: &'a Path,
 }
 
-impl<'a> Sink for Agregator<'a> {
+impl<'a> Sink for Aggregator<'a> {
     type Error = io::Error;
 
     fn matched(
@@ -46,28 +46,20 @@ impl<'a> Sink for Agregator<'a> {
 
         if let Some(captures) = REGEX.captures(line) {
             if let Some(group) = captures.get(RegexGroup::Target as usize) {
-                let tag_name = group.as_str().to_string();
-                self.tag_list
-                    .targets
-                    .entry(tag_name.clone())
-                    .or_default()
-                    .push(TagLocation {
-                        path: Box::from(self.path),
-                        line_number,
-                        line_content: tag_name,
-                    })
+                let tag_id = group.as_str().to_string();
+                self.tag_list.target_tags.push(Tag {
+                    id: tag_id,
+                    file_path: Box::from(self.path),
+                    line_number,
+                })
             }
             if let Some(group) = captures.get(RegexGroup::Link as usize) {
-                let tag_name = group.as_str().to_string();
-                self.tag_list
-                    .links
-                    .entry(tag_name.clone())
-                    .or_default()
-                    .push(TagLocation {
-                        path: Box::from(self.path),
-                        line_number,
-                        line_content: tag_name,
-                    })
+                let tag_id = group.as_str().to_string();
+                self.tag_list.link_tags.push(Tag {
+                    id: tag_id,
+                    file_path: Box::from(self.path),
+                    line_number,
+                })
             }
         }
 
@@ -75,15 +67,16 @@ impl<'a> Sink for Agregator<'a> {
     }
 }
 
-pub struct TagLocation {
-    pub path: Box<Path>,
+#[derive(Clone)]
+pub struct Tag {
+    pub id: String,
+    pub file_path: Box<Path>,
     pub line_number: u64,
-    pub line_content: String,
 }
 
 pub struct TagList {
-    pub targets: HashMap<String, Vec<TagLocation>>,
-    pub links: HashMap<String, Vec<TagLocation>>,
+    pub target_tags: Vec<Tag>,
+    pub link_tags: Vec<Tag>,
 }
 
 pub struct CombinedTagList {
@@ -98,16 +91,16 @@ struct ThreadBuffer {
 impl Drop for ThreadBuffer {
     fn drop(&mut self) {
         let tag_list = TagList {
-            targets: std::mem::take(&mut self.tag_list.targets),
-            links: std::mem::take(&mut self.tag_list.links),
+            target_tags: std::mem::take(&mut self.tag_list.target_tags),
+            link_tags: std::mem::take(&mut self.tag_list.link_tags),
         };
         self.combined.write().unwrap().tag_lists.push(tag_list);
     }
 }
 
-pub fn find_tags(
-    paths: impl IntoIterator<Item = impl AsRef<Path>>,
-) -> Arc<RwLock<CombinedTagList>> {
+type TagFindResult = Arc<RwLock<CombinedTagList>>;
+
+pub fn find_tags(paths: impl IntoIterator<Item = impl AsRef<Path>>) -> TagFindResult {
     let combined_tag_list = Arc::new(RwLock::new(CombinedTagList { tag_lists: vec![] }));
 
     let matcher = Arc::new(
@@ -136,8 +129,8 @@ pub fn find_tags(
             .build();
         let mut buffer = ThreadBuffer {
             tag_list: TagList {
-                targets: HashMap::new(),
-                links: HashMap::new(),
+                target_tags: Vec::new(),
+                link_tags: Vec::new(),
             },
             combined: combined_tag_list.clone(),
         };
@@ -154,16 +147,80 @@ pub fn find_tags(
                 return WalkState::Continue;
             }
 
-            let agregator = Agregator {
+            let aggregator = Aggregator {
                 tag_list: &mut buffer.tag_list,
                 path: entry.path(),
             };
             let _search_result =
-                searcher.search_path(matcher_copy.as_ref(), entry.path(), agregator);
+                searcher.search_path(matcher_copy.as_ref(), entry.path(), aggregator);
 
             WalkState::Continue
         })
     });
 
     combined_tag_list
+}
+
+pub struct TagMapping {
+    pub tags: Vec<Tag>,
+    pub tag_indices_by_id: HashMap<String, Vec<usize>>,
+    pub tag_indices_by_file: HashMap<PathBuf, Vec<usize>>,
+}
+
+impl TagMapping {
+    fn new() -> TagMapping {
+        TagMapping {
+            tags: Vec::new(),
+            tag_indices_by_id: HashMap::new(),
+            tag_indices_by_file: HashMap::new(),
+        }
+    }
+
+    fn add_tag(&mut self, tag: Tag) {
+        let tag_index = self.tags.len();
+        self.tag_indices_by_id
+            .entry(tag.id.clone())
+            .or_default()
+            .push(tag_index);
+        self.tag_indices_by_file
+            .entry(tag.file_path.to_path_buf())
+            .or_default()
+            .push(tag_index);
+        self.tags.push(tag);
+    }
+}
+
+pub struct TagRegistry {
+    pub target_tags: TagMapping,
+    pub link_tags: TagMapping,
+}
+
+impl TagRegistry {
+    pub fn new() -> TagRegistry {
+        TagRegistry {
+            target_tags: TagMapping::new(),
+            link_tags: TagMapping::new(),
+        }
+    }
+}
+
+impl Default for TagRegistry {
+    fn default() -> TagRegistry {
+        TagRegistry::new()
+    }
+}
+
+pub fn aggregate_tags(tags: TagFindResult) -> TagRegistry {
+    let mut tag_registry = TagRegistry::new();
+
+    for tag_list in tags.read().unwrap().tag_lists.iter() {
+        for target_tag in tag_list.target_tags.iter() {
+            tag_registry.target_tags.add_tag(target_tag.clone());
+        }
+        for link_tag in tag_list.link_tags.iter() {
+            tag_registry.link_tags.add_tag(link_tag.clone());
+        }
+    }
+
+    tag_registry
 }
